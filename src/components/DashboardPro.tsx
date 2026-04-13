@@ -82,7 +82,26 @@ function useDashboardData() {
       fetch(apiUrl("/api/sessions")).then((r) => (r.ok ? r.json() : null)),
     ]);
     if (fedRes.status === "fulfilled" && fedRes.value) setFed(fedRes.value);
-    if (plugRes.status === "fulfilled" && plugRes.value) setPlugins(plugRes.value);
+    if (plugRes.status === "fulfilled" && plugRes.value) {
+      // Normalize: Elysia /api/plugins returns array of manifests,
+      // but PluginSystem.stats() returns {startedAt, plugins: [...]}
+      const raw = plugRes.value;
+      if (raw.plugins && Array.isArray(raw.plugins)) {
+        setPlugins(raw);
+      } else if (Array.isArray(raw)) {
+        setPlugins({
+          startedAt: new Date().toISOString(),
+          plugins: raw.map((p: any) => ({
+            name: p.name ?? "unknown",
+            type: "package",
+            source: p.api?.path ?? "",
+            events: 0,
+            errors: 0,
+            lastEvent: "",
+          })),
+        });
+      }
+    }
     if (sessRes.status === "fulfilled" && sessRes.value) {
       const s = Array.isArray(sessRes.value) ? sessRes.value : sessRes.value.sessions ?? [];
       setSessions(s);
