@@ -469,7 +469,7 @@ export function App() {
   if (route === "overview") {
     return (
       <Layout activeView="overview" {...layoutProps}>
-        <OverviewGrid sessions={sessions} agents={agents} connected={connected} send={send} onSelectAgent={onSelectAgent} />
+        <OverviewGrid sessions={filteredSessions} agents={filteredAgents} connected={connected} send={send} onSelectAgent={onSelectAgent} />
       </Layout>
     );
   }
