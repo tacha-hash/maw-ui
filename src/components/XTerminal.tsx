@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { wsUrl } from "../lib/api";
+import { wsUrl, apiUrl } from "../lib/api";
 import type { AgentState } from "../lib/types";
 
 interface XTerminalProps {
@@ -41,6 +41,8 @@ const THEME = {
 
 export function XTerminal({ target, onClose, onNavigate, siblings, onSelectSibling, readOnly = false }: XTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Keep callbacks in refs so terminal effect doesn't re-run on every render
   const onCloseRef = useRef(onClose);
@@ -86,6 +88,7 @@ export function XTerminal({ target, onClose, onNavigate, siblings, onSelectSibli
       // Connect to PTY WebSocket
       ws = new WebSocket(wsUrl("/ws/pty"));
       ws.binaryType = "arraybuffer";
+      wsRef.current = ws;
 
       ws.onopen = () => {
         ws!.send(JSON.stringify({
@@ -172,9 +175,64 @@ export function XTerminal({ target, onClose, onNavigate, siblings, onSelectSibli
       dataSub?.dispose();
       binSub?.dispose();
       ws?.close();
+      wsRef.current = null;
       term.dispose();
     };
   }, [target]);
 
-  return <div ref={containerRef} className="w-full h-full" />;
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    if (readOnly) return;
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    const encoder = new TextEncoder();
+    const ws = wsRef.current;
+
+    for (const file of files) {
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        const res = await fetch(apiUrl("/api/upload"), { method: "POST", body: form });
+        const data = await res.json();
+        if (data.ok && data.path && ws && ws.readyState === WebSocket.OPEN) {
+          // Paste file path into terminal
+          ws.send(encoder.encode(data.path));
+        }
+      } catch { /* upload failed silently */ }
+    }
+  }, [readOnly]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+  }, []);
+
+  return (
+    <div
+      className="w-full h-full relative"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
+      <div ref={containerRef} className="w-full h-full" />
+      {dragOver && (
+        <div className="absolute inset-0 bg-cyan-500/10 border-2 border-dashed border-cyan-400/50 rounded-lg flex items-center justify-center pointer-events-none z-10">
+          <span className="text-cyan-300 text-lg font-mono bg-black/60 px-4 py-2 rounded-lg">
+            Drop file here
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
